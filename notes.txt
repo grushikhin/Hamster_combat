@@ -2,3 +2,91 @@
 60k -> 260k/h 7200k
 70k -> 274k/h (800k) 6400k
 80k -> 278k/h (900k) 5500k
+
+
+
+fetch("https://api.hamsterkombat.io/clicker/check-airdrop-task", {
+  "headers": {
+    "accept": "application/json",
+    "accept-language": "en-GB",
+    "authorization": "Bearer ",
+    "cache-control": "no-cache",
+    "content-type": "application/json",
+    "pragma": "no-cache",
+    "sec-ch-ua": "\"Chromium\";v=\"128\", \"Not;A=Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site"
+  },
+  "referrer": "https://hamsterkombat.io/",
+  "referrerPolicy": "strict-origin-when-cross-origin",
+  "body": "{\"id\":\"airdrop_connect_ton_wallet\",\"walletAddress\":\"0:62b0091d6e4979b1922bed23b8bd4e83052cd7734eb930e22d165414d2babe1a\"}",
+  "method": "POST",
+  "mode": "cors",
+  "credentials": "include"
+});
+
+fetch("https://api.hamsterkombat.io/clicker/list-airdrop-tasks", {
+  "headers": {
+    "accept": "*/*",
+    "accept-language": "en-GB",
+    "authorization": "Bearer ",
+    "cache-control": "no-cache",
+    "pragma": "no-cache",
+    "sec-ch-ua": "\"Chromium\";v=\"128\", \"Not;A=Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site"
+  },
+  "referrer": "https://hamsterkombat.io/",
+  "referrerPolicy": "strict-origin-when-cross-origin",
+  "body": null,
+  "method": "POST",
+  "mode": "cors",
+  "credentials": "include"
+});
+
+fetch("https://api.hamsterkombat.io/clicker/add-referral", {
+  "headers": {
+    "accept": "application/json",
+    "accept-language": "en-GB",
+    "authorization": "Bearer ",
+    "cache-control": "no-cache",
+    "content-type": "application/json",
+    "pragma": "no-cache",
+    "sec-ch-ua": "\"Chromium\";v=\"128\", \"Not;A=Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "Referer": "https://hamsterkombat.io/",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "body": "{\"friendUserId\":868428662}",
+  "method": "POST"
+});
+
+fetch("https://api.hamsterkombat.io/clicker/claim-daily-combo", {
+  "headers": {
+    "accept": "*/*",
+    "accept-language": "en-GB",
+    "authorization": "Bearer",
+    "cache-control": "no-cache",
+    "pragma": "no-cache",
+    "sec-ch-ua": "\"Chromium\";v=\"128\", \"Not;A=Brand\";v=\"24\", \"Google Chrome\";v=\"128\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "Referer": "https://hamsterkombat.io/",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "body": null,
+  "method": "POST"
+});

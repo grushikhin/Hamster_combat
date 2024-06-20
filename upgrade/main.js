@@ -12,6 +12,8 @@ const dailyUpgradesList = dailyUpgrades.split('\n')
     .map(line => line.replace('*', '').trim());
 
 const condition = 150000;
+const comboCondition = 500000;
+
 const profitabilityLimit = 0.02;
 const csvDataProxy = fs.readFileSync('proxy.csv', 'utf8');
 const proxyList = csvDataProxy.split('\n').map(line => line.trim()).filter(line => line !== '');
@@ -44,10 +46,10 @@ async function checkProxyIP(proxy) {
     }
 }
 
-async function getBalanceCoins(dancay, account) {
+async function getBalanceCoins(httpClient, account) {
     const { authorization, name } = account;
     try {
-        const response = await dancay.post('/clicker/sync', {}, {
+        const response = await httpClient.post('/clicker/sync', {}, {
             headers: {
                 'Authorization': `Bearer ${authorization}`
             }
@@ -65,67 +67,51 @@ async function getBalanceCoins(dancay, account) {
     }
 }
 
-async function buyUpgrades(dancay, account) {
+async function buyUpgrades(httpClient, account) {
     const { authorization, name } = account;
     try {
-        const upgradesResponse = await dancay.post('/clicker/upgrades-for-buy', {}, {
-            headers: {
-                'Authorization': `Bearer ${authorization}`
+        const upgrades = await getAvailableUpgrades(httpClient, account);
+            
+        let balanceCoins = await getBalanceCoins(httpClient, account);
+        let purchased = false;
+
+        for (const upgrade of upgrades) {
+            if (upgrade.cooldownSeconds > 0) {
+                console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
+                continue; 
             }
-        });
 
-        if (upgradesResponse.status === 200) {
-            const upgrades = upgradesResponse.data.upgradesForBuy.map(it => ({
-                ...it,
-                profitability: it.profitPerHour / it.price
-            }));
-            let balanceCoins = await getBalanceCoins(dancay, account);
-            let purchased = false;
-
-            upgrades.sort((a, b) => b.profitability - a.profitability);
-
-            for (const upgrade of upgrades) {
-                if (upgrade.cooldownSeconds > 0) {
-                    console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
-                    continue; 
-                }
-
-                if (upgrade.isAvailable && !upgrade.isExpired && upgrade.price < condition && upgrade.price <= balanceCoins && upgrade.profitability >= profitabilityLimit) {
-                    const buyUpgradePayload = {
-                        upgradeId: upgrade.id,
-                        timestamp: Math.floor(Date.now() / 1000)
-                    };
-                    try {
-                        const response = await dancay.post('/clicker/buy-upgrade', buyUpgradePayload, {
-                            headers: {
-                                'Authorization': `Bearer ${authorization}`
-                            }
-                        });
-                        if (response.status === 200) {
-                            console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
-                            purchased = true;
-                            balanceCoins -= upgrade.price; 
+            if (upgrade.price < condition && upgrade.price <= balanceCoins && upgrade.profitability >= profitabilityLimit) {
+                const buyUpgradePayload = {
+                    upgradeId: upgrade.id,
+                    timestamp: Math.floor(Date.now() / 1000)
+                };
+                try {
+                    await httpClient.post('/clicker/buy-upgrade', buyUpgradePayload, {
+                        headers: {
+                            'Authorization': `Bearer ${authorization}`
                         }
-                    } catch (error) {
-                        if (error.response && error.response.data && error.response.data.error_code === 'UPGRADE_COOLDOWN') {
-                            console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${error.response.data.cooldownSeconds} seconds.`);
-                            continue; 
-                        } else {
-                            throw error;
-                        }
+                    });
+                    console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
+                    purchased = true;
+                    balanceCoins -= upgrade.price; 
+                } catch (error) {
+                    if (error.response && error.response.data && error.response.data.error_code === 'UPGRADE_COOLDOWN') {
+                        console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${error.response.data.cooldownSeconds} seconds.`);
+                        continue; 
+                    } else {
+                        throw error;
                     }
-                    await new Promise(resolve => setTimeout(resolve, 1000)); 
                 }
+                await new Promise(resolve => setTimeout(resolve, 1000)); 
             }
+        }
 
-            if (!purchased) {
-                console.log(`[${name}] Does not have any available or eligible upgrades. Moving to the next account.`);
-                return false;
-            }
-        } else {
-            console.error(`[${name}] Failed to retrieve upgrade list. Status code:`, upgradesResponse.status);
+        if (!purchased) {
+            console.log(`[${name}] Does not have any available or eligible upgrades. Moving to the next account.`);
             return false;
         }
+        
     } catch (error) {
         console.error(`[${name}] Unexpected error, moving to the next token`);
         return false;
@@ -133,13 +119,82 @@ async function buyUpgrades(dancay, account) {
     return true;
 }
 
-async function claimDailyCipher(dancay, { authorization, name }, cipher) {
+async function getAvailableUpgrades(httpClient, { authorization, name }) {
+    try {
+        const upgradesResponse = await httpClient.post('/clicker/upgrades-for-buy', {}, {
+            headers: {
+                'Authorization': `Bearer ${authorization}`
+            }
+        });
+
+        const upgrades = upgradesResponse.data.upgradesForBuy
+            .filter(it => it.isAvailable && !it.isExpired)
+            .map(it => ({
+            ...it,
+            profitability: it.profitPerHour / it.price
+        })).sort((a, b) => b.profitability - a.profitability);
+
+        return upgrades;
+    } catch (error) {
+        console.error(`[${name}] Failed to retrieve upgrade list. Error:`, error);
+        throw error;
+    }
+}
+
+async function buyComboUpgrades(httpClient, account) {
+    const { authorization, name } = account;
+    console.log(`[${name}] checking combo upgrades ${dailyUpgradesList}`)
+    try {
+        const upgrades = (await getAvailableUpgrades(httpClient, account)).filter(it => dailyUpgradesList.includes(it.name) && !it.cooldownSeconds);
+            if (upgrades.length !== 3) {
+                console.error(`[#{name}] don't have 3 daily upgrades`, upgrades);
+                return;
+            }
+
+            let balanceCoins = await getBalanceCoins(httpClient, account);
+            let purchased = false;
+
+            for (const upgrade of upgrades) {
+                if (upgrade.price < comboCondition && upgrade.price <= balanceCoins) {
+                    const buyUpgradePayload = {
+                        upgradeId: upgrade.id,
+                        timestamp: Math.floor(Date.now() / 1000)
+                    };
+                    await httpClient.post('/clicker/buy-upgrade', buyUpgradePayload, {
+                        headers: {
+                            'Authorization': `Bearer ${authorization}`
+                        }
+                    });
+
+                    console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
+                    purchased = true;
+                    balanceCoins -= upgrade.price;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 1000)); 
+                }
+            }
+
+            if (purchaised) {
+                await httpClient.post('/clicker/claim-daily-combo', {}, {
+                    headers: {
+                        'Authorization': `Bearer ${authorization}`
+                    }
+                });
+                return;
+            }
+
+            console.log(`[${name}] Does not have any available or eligible upgrades. Moving to the next account.`);
+
+    } catch (error) {
+        console.error(`[${name}] Unexpected error buying daily combo`, error);
+    }
+}
+
+async function claimDailyCipher(httpClient, { authorization, name }, cipher) {
     if (cipher) {
         try {
-            const payload = {
-                cipher: cipher
-            };
-            const response = await dancay.post('/clicker/claim-daily-cipher', payload, {
+            const payload = { cipher };
+            const response = await httpClient.post('/clicker/claim-daily-cipher', payload, {
                 headers: {
                     'Authorization': `Bearer ${authorization}`
                 }
@@ -156,20 +211,6 @@ async function claimDailyCipher(dancay, { authorization, name }, cipher) {
     }
 }
 
-async function runForAuthorization(account, proxy, cipher) {
-    const dancay = createAxiosInstance(proxy);
-    await checkProxyIP(proxy);
-
-    await claimDailyCipher(dancay, account, cipher);
-
-    while (true) {
-        const success = await buyUpgrades(dancay, account);
-        if (!success) {
-            break;
-        }
-    }
-}
-
 async function askForUpgrade() {
     const rl = readline.createInterface({
         input: process.stdin,
@@ -178,6 +219,21 @@ async function askForUpgrade() {
 
     return new Promise(resolve => {
         rl.question('Upgrade any cards? (y/n): ', (answer) => {
+            rl.close();
+            resolve(answer.trim().toLowerCase() === 'y');
+        });
+    });
+}
+
+
+async function askForCombo() {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    return new Promise(resolve => {
+        rl.question(`Upgrade Daily Combo? (${dailyUpgradesList.join(' | ')}) (y/n): `, (answer) => {
             rl.close();
             resolve(answer.trim().toLowerCase() === 'y');
         });
@@ -201,6 +257,7 @@ async function askForCipher() {
 async function main() {
     const shouldUpgrade = await askForUpgrade(); 
     const cipher = await askForCipher();
+    const buyCombo = await askForCombo();
 
     for (let i = 0; i < authorizationList.length; i++) {
         const authorization = authorizationList[i];
@@ -211,12 +268,24 @@ async function main() {
             name: name || `Acc${i + 1}`
         };
 
+        await checkProxyIP(proxy);
+
+        const httpClient = createAxiosInstance(proxy);
+
+        if (cipher) {
+            await claimDailyCipher(httpClient, account, cipher);
+        }
+        if (buyCombo) {
+            await buyComboUpgrades(httpClient, account);
+        }
+
         if (shouldUpgrade) { 
-            await runForAuthorization(account, proxy, cipher);
-        } else { 
-            const dancay = createAxiosInstance(proxy);
-            await checkProxyIP(proxy);
-            await claimDailyCipher(dancay, account, cipher);
+            while (true) {
+                const success = await buyUpgrades(httpClient, account);
+                if (!success) {
+                    break;
+                }
+            }
         }
     }
     console.log('All tokens have been processed.');
