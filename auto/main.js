@@ -22,8 +22,8 @@ function startWorker(authorization, name) {
 
 function main() {
     authorizationList.forEach((authorization, index) => {
-        const name = `acc${index + 1}`;
-        startWorker(authorization, name);
+        const [token, name] = authorization.split(':');
+        startWorker(token, name || `acc${index + 1}`);
     });
     console.log('All workers started');
 }

@@ -21,7 +21,7 @@ async function buyBoost(authorization) {
     try {
         const payload = {
             boostId: "BoostFullAvailableTaps",
-            timestamp: timeBuyBoost
+            timestamp: timeBuyBoost || Date.now()
         };
 
         const response = await axiosInstance.post('/clicker/buy-boost', payload, {
@@ -32,10 +32,10 @@ async function buyBoost(authorization) {
 
         if (response.status === 200) {
             timeBuyBoost = Date.now();
-            console.log(`[${name}] Buy Boost thành công !!!`);
+            console.log(`[${name}] Buy Boost successful !!!`);
         }
     } catch (error) {
-        console.log(`[${name}] Buy Boost thất bại vì lí do ${error}.`);
+        console.log(`[${name}] Buy Boost fails for a reason ${error}.`);
         // setTimeout(() => checkBoost(authorization), 2000); // Pass function reference
     }
     return null;
@@ -58,7 +58,7 @@ async function checkBoost(authorization) {
             if (cooldownSeconds === 0) {
                 buyBoost(authorization);
             } else {
-                console.log(`[${name}] Boost đang hồi trong ${Math.ceil(cooldownSeconds / 60)} phút nữa`);
+                console.log(`[${name}] Boost is recovering ${Math.ceil(cooldownSeconds / 60)} another minute`);
             }
         }
     } catch (error) {
@@ -90,10 +90,10 @@ async function clickWithAPI(authorization) {
                 availableTaps: clickerUser.availableTaps,
                 maxTaps: clickerUser.maxTaps
             };
-            console.log(`[${name}] Đang tap:`, requiredFields);
+            console.log(`[${name}] Clicking:`, requiredFields);
             return requiredFields;
         } else {
-            console.error(`[${name}] Không bấm được. Status code:`, response.status);
+            console.error(`[${name}] Unable to click. Status code:`, response.status);
         }
     } catch (error) {
         console.error(`[${name}] Error:`, error);
@@ -118,11 +118,11 @@ async function checkTasks(authorization) {
                             'Authorization': `Bearer ${authorization}`
                         }
                     });
-                    console.log(`[${name}] Đã điểm danh hàng ngày cho token ${authorization}`);
+                    console.log(`[${name}] Checked daily attendance for tokens ${authorization}`);
                 }
             }
         } else {
-            console.error(`[${name}] Không lấy được danh sách nhiệm vụ. Status code:`, response.status);
+            console.error(`[${name}] Could not get task list. Status code:`, response.status);
         }
     } catch (error) {
         console.error(`[${name}] Error:`, error);
@@ -141,9 +141,9 @@ async function runForAuthorization(authorization) {
         const results = await Promise.all(requests);
         const clickData = results[results.length - 1];
         if (clickData && clickData.availableTaps < 10) {
-            console.log(`[${name}] Token ${authorization} có năng lượng nhỏ hơn 10. Đợi hồi năng lượng...`);
+            console.log(`[${name}] Token ${authorization} has energy less than 10. Wait for energy recovery...`);
             if (Date.now() - timeBuyBoost > 60 * MINUTES) {
-                console.log(`[${name}] Đang chuẩn bị sử dụng Boost...`);
+                console.log(`[${name}] Preparing to use Boost...`);
                 await checkBoost(authorization);
             }
             await wait(timeWaitToRecharge); // Wait for the specified recharge time before retrying

@@ -5,7 +5,14 @@ const readline = require('readline');
 
 const csvDataAuth = fs.readFileSync('authorization.csv', 'utf8');
 const authorizationList = csvDataAuth.split('\n').map(line => line.trim()).filter(line => line !== '');
-const dieukien = 500000;
+const dailyUpgrades = fs.readFileSync('Upgrades.csv', 'utf8');
+const dailyUpgradesList = dailyUpgrades.split('\n')
+    .map(line => line.trim())
+    .filter(line => line.includes('*'))
+    .map(line => line.replace('*', '').trim());
+
+const condition = 150000;
+const profitabilityLimit = 0.02;
 const csvDataProxy = fs.readFileSync('proxy.csv', 'utf8');
 const proxyList = csvDataProxy.split('\n').map(line => line.trim()).filter(line => line !== '');
 
@@ -28,16 +35,17 @@ async function checkProxyIP(proxy) {
             httpsAgent: proxyAgent 
         });
         if (response.status === 200) {
-            console.log('Địa chỉ IP của proxy là:', response.data.ip);
+            console.log('Proxy IP address:', response.data.ip);
         } else {
-            console.error('Không thể kiểm tra IP của proxy. Status code:', response.status);
+            console.error('Unable to check proxy IP. Status code:', response.status);
         }
     } catch (error) {
-        console.error('Error khi kiểm tra IP của proxy:', error);
+        console.error('Error checking proxy IP:', error);
     }
 }
 
-async function getBalanceCoins(dancay, authorization) {
+async function getBalanceCoins(dancay, account) {
+    const { authorization, name } = account;
     try {
         const response = await dancay.post('/clicker/sync', {}, {
             headers: {
@@ -48,16 +56,17 @@ async function getBalanceCoins(dancay, authorization) {
         if (response.status === 200) {
             return response.data.clickerUser.balanceCoins;
         } else {
-            console.error('Không lấy được thông tin balanceCoins. Status code:', response.status);
+            console.error(`[${name}] Failed to retrieve balanceCoins information. Status code:`, response.status);
             return null;
         }
     } catch (error) {
-        console.error('Error:', error);
+        console.error(`[${name}] Error:`, error);
         return null;
     }
 }
 
-async function buyUpgrades(dancay, authorization) {
+async function buyUpgrades(dancay, account) {
+    const { authorization, name } = account;
     try {
         const upgradesResponse = await dancay.post('/clicker/upgrades-for-buy', {}, {
             headers: {
@@ -66,17 +75,22 @@ async function buyUpgrades(dancay, authorization) {
         });
 
         if (upgradesResponse.status === 200) {
-            const upgrades = upgradesResponse.data.upgradesForBuy;
-            let balanceCoins = await getBalanceCoins(dancay, authorization);
+            const upgrades = upgradesResponse.data.upgradesForBuy.map(it => ({
+                ...it,
+                profitability: it.profitPerHour / it.price
+            }));
+            let balanceCoins = await getBalanceCoins(dancay, account);
             let purchased = false;
+
+            upgrades.sort((a, b) => b.profitability - a.profitability);
 
             for (const upgrade of upgrades) {
                 if (upgrade.cooldownSeconds > 0) {
-                    console.log(`Thẻ ${upgrade.name} đang trong thời gian cooldown ${upgrade.cooldownSeconds} giây.`);
+                    console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
                     continue; 
                 }
 
-                if (upgrade.isAvailable && !upgrade.isExpired && upgrade.price < dieukien && upgrade.price <= balanceCoins) {
+                if (upgrade.isAvailable && !upgrade.isExpired && upgrade.price < condition && upgrade.price <= balanceCoins && upgrade.profitability >= profitabilityLimit) {
                     const buyUpgradePayload = {
                         upgradeId: upgrade.id,
                         timestamp: Math.floor(Date.now() / 1000)
@@ -88,13 +102,13 @@ async function buyUpgrades(dancay, authorization) {
                             }
                         });
                         if (response.status === 200) {
-                            console.log(`(${Math.floor(balanceCoins)}) Đã nâng cấp thẻ ${upgrade.name} cho token ${authorization}.`);
+                            console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
                             purchased = true;
                             balanceCoins -= upgrade.price; 
                         }
                     } catch (error) {
                         if (error.response && error.response.data && error.response.data.error_code === 'UPGRADE_COOLDOWN') {
-                            console.log(`Thẻ ${upgrade.name} đang trong thời gian cooldown ${error.response.data.cooldownSeconds} giây.`);
+                            console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${error.response.data.cooldownSeconds} seconds.`);
                             continue; 
                         } else {
                             throw error;
@@ -105,21 +119,21 @@ async function buyUpgrades(dancay, authorization) {
             }
 
             if (!purchased) {
-                console.log(`Token ${authorization.substring(0, 10)}... không có thẻ nào khả dụng hoặc đủ điều kiện. Chuyển token tiếp theo...`);
+                console.log(`[${name}] Does not have any available or eligible upgrades. Moving to the next account.`);
                 return false;
             }
         } else {
-            console.error('Không lấy được danh sách thẻ. Status code:', upgradesResponse.status);
+            console.error(`[${name}] Failed to retrieve upgrade list. Status code:`, upgradesResponse.status);
             return false;
         }
     } catch (error) {
-        console.error('Lỗi không mong muốn, chuyển token tiếp theo');
+        console.error(`[${name}] Unexpected error, moving to the next token`);
         return false;
     }
     return true;
 }
 
-async function claimDailyCipher(dancay, authorization, cipher) {
+async function claimDailyCipher(dancay, { authorization, name }, cipher) {
     if (cipher) {
         try {
             const payload = {
@@ -132,24 +146,24 @@ async function claimDailyCipher(dancay, authorization, cipher) {
             });
 
             if (response.status === 200) {
-                console.log(`Đã giải mã morse ${cipher} cho token ${authorization}`);
+                console.log(`[${name}] Decoded morse ${cipher} for ${name}`);
             } else {
-                console.error('Không claim được daily cipher. Status code:', response.status);
+                console.error(`[${name}] Failed to claim daily cipher. Status code:`, response.status);
             }
         } catch (error) {
-            console.error('Error:', error.message || error);
+            console.error(`[${name}] Error:`, error.message || error);
         }
     }
 }
 
-async function runForAuthorization(authorization, proxy, cipher) {
+async function runForAuthorization(account, proxy, cipher) {
     const dancay = createAxiosInstance(proxy);
     await checkProxyIP(proxy);
 
-    await claimDailyCipher(dancay, authorization, cipher);
+    await claimDailyCipher(dancay, account, cipher);
 
     while (true) {
-        const success = await buyUpgrades(dancay, authorization);
+        const success = await buyUpgrades(dancay, account);
         if (!success) {
             break;
         }
@@ -163,7 +177,7 @@ async function askForUpgrade() {
     });
 
     return new Promise(resolve => {
-        rl.question('Có nâng cấp thẻ không? (y/n): ', (answer) => {
+        rl.question('Upgrade any cards? (y/n): ', (answer) => {
             rl.close();
             resolve(answer.trim().toLowerCase() === 'y');
         });
@@ -177,7 +191,7 @@ async function askForCipher() {
     });
 
     return new Promise(resolve => {
-        rl.question('Mã morse hôm nay cần giải: ', (answer) => {
+        rl.question('Morse code to decode today: ', (answer) => {
             rl.close();
             resolve(answer.trim().toUpperCase());
         });
@@ -190,17 +204,24 @@ async function main() {
 
     for (let i = 0; i < authorizationList.length; i++) {
         const authorization = authorizationList[i];
+        const [token, name] = authorization.split(':');
         const proxy = proxyList[i % proxyList.length];
+        const account = {
+            authorization: token,
+            name: name || `Acc${i + 1}`
+        };
 
         if (shouldUpgrade) { 
-            await runForAuthorization(authorization, proxy, cipher);
+            await runForAuthorization(account, proxy, cipher);
         } else { 
             const dancay = createAxiosInstance(proxy);
             await checkProxyIP(proxy);
-            await claimDailyCipher(dancay, authorization, cipher);
+            await claimDailyCipher(dancay, account, cipher);
         }
     }
-    console.log('Đã chạy xong tất cả các token.');
+    console.log('All tokens have been processed.');
 }
 
 main();
+
+
