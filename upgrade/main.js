@@ -4,17 +4,19 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const readline = require('readline');
 
 const csvDataAuth = fs.readFileSync('authorization.csv', 'utf8');
-const authorizationList = csvDataAuth.split('\n').map(line => line.trim()).filter(line => line !== '');
+const authorizationList = csvDataAuth.split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '' && !line.includes('#'));
 const dailyUpgrades = fs.readFileSync('Upgrades.csv', 'utf8');
 const dailyUpgradesList = dailyUpgrades.split('\n')
     .map(line => line.trim())
     .filter(line => line.includes('*'))
     .map(line => line.replace('*', '').trim());
 
-const condition = 150000;
+const condition = 1000000;
 const comboCondition = 500000;
 
-const profitabilityLimit = 0.02;
+const profitabilityLimit = 0.004;
 const csvDataProxy = fs.readFileSync('proxy.csv', 'utf8');
 const proxyList = csvDataProxy.split('\n').map(line => line.trim()).filter(line => line !== '');
 
@@ -71,10 +73,12 @@ async function buyUpgrades(httpClient, account) {
     const { authorization, name } = account;
     try {
         const upgrades = await getAvailableUpgrades(httpClient, account);
-            
+
         let balanceCoins = await getBalanceCoins(httpClient, account);
         let purchased = false;
 
+        const firstUpgrade = upgrades[0];
+        console.log(`[${name}] Most profitable upgrade is ${firstUpgrade.name}. It has profitability ${firstUpgrade.profitability} price ${firstUpgrade.price.toLocaleString('en-US')}$ and delta ${firstUpgrade.profitPerHourDelta.toLocaleString('en-US')}$`)
         for (const upgrade of upgrades) {
             if (upgrade.cooldownSeconds > 0) {
                 console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
@@ -92,7 +96,7 @@ async function buyUpgrades(httpClient, account) {
                             'Authorization': `Bearer ${authorization}`
                         }
                     });
-                    console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
+                    console.log(`[${name}] (${Math.floor(balanceCoins).toLocaleString('en-US')}$ +${upgrade.profitPerHour.toLocaleString('en-US')}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price.toLocaleString('en-US')}$ with profitability ${upgrade.profitability}.`);
                     purchased = true;
                     balanceCoins -= upgrade.price; 
                 } catch (error) {
@@ -113,7 +117,7 @@ async function buyUpgrades(httpClient, account) {
         }
         
     } catch (error) {
-        console.error(`[${name}] Unexpected error, moving to the next token`);
+        console.error(`[${name}] Unexpected error, moving to the next token`, error);
         return false;
     }
     return true;
@@ -131,7 +135,7 @@ async function getAvailableUpgrades(httpClient, { authorization, name }) {
             .filter(it => it.isAvailable && !it.isExpired)
             .map(it => ({
             ...it,
-            profitability: it.profitPerHour / it.price
+            profitability: it.profitPerHourDelta / it.price
         })).sort((a, b) => b.profitability - a.profitability);
 
         return upgrades;
@@ -147,7 +151,7 @@ async function buyComboUpgrades(httpClient, account) {
     try {
         const upgrades = (await getAvailableUpgrades(httpClient, account)).filter(it => dailyUpgradesList.includes(it.name) && !it.cooldownSeconds);
             if (upgrades.length !== 3) {
-                console.error(`[#{name}] don't have 3 daily upgrades`, upgrades);
+                console.error(`[${name}] don't have 3 daily upgrades`, upgrades);
                 return;
             }
 
@@ -174,7 +178,7 @@ async function buyComboUpgrades(httpClient, account) {
                 }
             }
 
-            if (purchaised) {
+            if (purchased) {
                 await httpClient.post('/clicker/claim-daily-combo', {}, {
                     headers: {
                         'Authorization': `Bearer ${authorization}`
@@ -287,6 +291,7 @@ async function main() {
                 }
             }
         }
+        console.log('---------------------------');
     }
     console.log('All tokens have been processed.');
 }
