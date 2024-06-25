@@ -13,12 +13,20 @@ const dailyUpgradesList = dailyUpgrades.split('\n')
     .filter(line => line.includes('*'))
     .map(line => line.replace('*', '').trim());
 
-const condition = 1000000;
-const comboCondition = 500000;
+const maxPrice = 2_000_000;
+const comboCondition = 1_500_000;
+const paybackInDaysLimit = 14;
+const profitabilityLimit = 0.0031; // 13 days
+const bulkSize = 5;
 
-const profitabilityLimit = 0.004;
 const csvDataProxy = fs.readFileSync('proxy.csv', 'utf8');
 const proxyList = csvDataProxy.split('\n').map(line => line.trim()).filter(line => line !== '');
+
+function shouldBuy(upgrade) {
+    return upgrade.price < maxPrice &&
+    upgrade.profitability >= profitabilityLimit &&
+    upgrade.paybackInDays <= paybackInDaysLimit;
+}
 
 function createAxiosInstance(proxy) {
     const proxyAgent = new HttpsProxyAgent(proxy);
@@ -69,6 +77,24 @@ async function getBalanceCoins(httpClient, account) {
     }
 }
 
+function logUpgrades(accountName, upgrades) {
+    console.log(`[${accountName}] Available upgrades:`);
+    console.table(upgrades.map(it => {
+        const { name, profitability, price, profitPerHourDelta, paybackInDays } = it;
+        return {
+            name,
+            paybackInDays: paybackInDays.toFixed(1),
+            profitability: profitability.toFixed(4),
+            price: price.toLocaleString('en-US') + '$',
+            profitPerHourDelta:  profitPerHourDelta.toLocaleString('en-US') + '$'
+        };
+    }))
+}
+function logUpgrade(accountName, balanceCoins, upgrade) {
+    console.log(`[${accountName}] (${Math.floor(balanceCoins).toLocaleString('en-US')}$ +${upgrade.profitPerHourDelta.toLocaleString('en-US')}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price.toLocaleString('en-US')}$ with payback in ${upgrade.paybackInDays}.`);
+
+}
+
 async function buyUpgrades(httpClient, account) {
     const { authorization, name } = account;
     try {
@@ -77,15 +103,16 @@ async function buyUpgrades(httpClient, account) {
         let balanceCoins = await getBalanceCoins(httpClient, account);
         let purchased = false;
 
-        const firstUpgrade = upgrades[0];
-        console.log(`[${name}] Most profitable upgrade is ${firstUpgrade.name}. It has profitability ${firstUpgrade.profitability} price ${firstUpgrade.price.toLocaleString('en-US')}$ and delta ${firstUpgrade.profitPerHourDelta.toLocaleString('en-US')}$`)
-        for (const upgrade of upgrades) {
+        logUpgrades(name, upgrades);
+
+        for (const [index, upgrade] of upgrades.entries()) {
+            if (index >= bulkSize) return purchased;
             if (upgrade.cooldownSeconds > 0) {
                 console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
                 continue; 
             }
 
-            if (upgrade.price < condition && upgrade.price <= balanceCoins && upgrade.profitability >= profitabilityLimit) {
+            if (upgrade.price <= balanceCoins && shouldBuy(upgrade)) {
                 const buyUpgradePayload = {
                     upgradeId: upgrade.id,
                     timestamp: Math.floor(Date.now() / 1000)
@@ -96,7 +123,7 @@ async function buyUpgrades(httpClient, account) {
                             'Authorization': `Bearer ${authorization}`
                         }
                     });
-                    console.log(`[${name}] (${Math.floor(balanceCoins).toLocaleString('en-US')}$ +${upgrade.profitPerHour.toLocaleString('en-US')}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price.toLocaleString('en-US')}$ with profitability ${upgrade.profitability}.`);
+                    logUpgrade(name, balanceCoins, upgrade);
                     purchased = true;
                     balanceCoins -= upgrade.price; 
                 } catch (error) {
@@ -135,7 +162,8 @@ async function getAvailableUpgrades(httpClient, { authorization, name }) {
             .filter(it => it.isAvailable && !it.isExpired)
             .map(it => ({
             ...it,
-            profitability: it.profitPerHourDelta / it.price
+            profitability: it.profitPerHourDelta / it.price,
+            paybackInDays: it.price / it.profitPerHourDelta / 24
         })).sort((a, b) => b.profitability - a.profitability);
 
         return upgrades;
@@ -170,7 +198,7 @@ async function buyComboUpgrades(httpClient, account) {
                         }
                     });
 
-                    console.log(`[${name}] (${Math.floor(balanceCoins)}$) Upgraded ${upgrade.name} to level ${upgrade.level + 1} by ${upgrade.price}$ with profitability ${upgrade.profitability}.`);
+                    logUpgrade(name, balanceCoins, upgrade);
                     purchased = true;
                     balanceCoins -= upgrade.price;
                     
