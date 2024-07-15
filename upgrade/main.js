@@ -13,10 +13,10 @@ const dailyUpgradesList = dailyUpgrades.split('\n')
     .filter(line => line.includes('*'))
     .map(line => line.replace('*', '').trim());
 
-const maxPrice = 2_000_000;
-const comboCondition = 1_500_000;
+const maxPrice = 5_000_000;
+const comboCondition = 5_000_000;
 const paybackInDaysLimit = 14;
-const profitabilityLimit = 0.0031; // 13 days
+const profitabilityLimit = 0.003; // 13 days
 const bulkSize = 5;
 
 const csvDataProxy = fs.readFileSync('proxy.csv', 'utf8');
@@ -29,14 +29,14 @@ function shouldBuy(upgrade) {
 }
 
 function createAxiosInstance(proxy) {
-    const proxyAgent = new HttpsProxyAgent(proxy);
+    // const proxyAgent = new HttpsProxyAgent(proxy);
     return axios.create({
-        baseURL: 'https://api.hamsterkombat.io',
+        baseURL: 'https://api.hamsterkombatgame.io',
         timeout: 10000,
         headers: {
             'Content-Type': 'application/json'
         },
-        httpsAgent: proxyAgent
+        // httpsAgent: proxyAgent
     });
 }
 
@@ -101,12 +101,12 @@ async function buyUpgrades(httpClient, account) {
         const upgrades = await getAvailableUpgrades(httpClient, account);
 
         let balanceCoins = await getBalanceCoins(httpClient, account);
-        let purchased = false;
+        let purchased = 0;
 
         logUpgrades(name, upgrades);
 
-        for (const [index, upgrade] of upgrades.entries()) {
-            if (index >= bulkSize) return purchased;
+        for (const upgrade of upgrades) {
+            if (purchased && purchased >= bulkSize) return !!purchased;
             if (upgrade.cooldownSeconds > 0) {
                 console.log(`[${name}] Upgrade ${upgrade.name} is in cooldown for ${upgrade.cooldownSeconds} seconds.`);
                 continue; 
@@ -124,7 +124,7 @@ async function buyUpgrades(httpClient, account) {
                         }
                     });
                     logUpgrade(name, balanceCoins, upgrade);
-                    purchased = true;
+                    purchased++;
                     balanceCoins -= upgrade.price; 
                 } catch (error) {
                     if (error.response && error.response.data && error.response.data.error_code === 'UPGRADE_COOLDOWN') {
@@ -140,7 +140,7 @@ async function buyUpgrades(httpClient, account) {
 
         if (!purchased) {
             console.log(`[${name}] Does not have any available or eligible upgrades. Moving to the next account.`);
-            return false;
+            return purchased;
         }
         
     } catch (error) {
@@ -300,7 +300,7 @@ async function main() {
             name: name || `Acc${i + 1}`
         };
 
-        await checkProxyIP(proxy);
+        // await checkProxyIP(proxy);
 
         const httpClient = createAxiosInstance(proxy);
 

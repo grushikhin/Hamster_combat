@@ -2,7 +2,7 @@ const fs = require('fs');
 const { fork } = require('child_process');
 
 const csvData = fs.readFileSync('authorization.csv', 'utf8');
-const authorizationList = csvData.split('\n').map(line => line.trim()).filter(line => line !== '');
+const authorizationList = csvData.split('\n').map(line => line.trim()).filter(line => line !== '' && !line.includes('#'));
 
 function startWorker(authorization, name) {
     const worker = fork('hamster-v3.js', [authorization, name]);

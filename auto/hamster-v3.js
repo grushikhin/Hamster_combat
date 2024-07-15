@@ -10,7 +10,7 @@ const timeWaitToRecharge = 10 * MINUTES;
 let timeBuyBoost = null;
 
 const axiosInstance = axios.create({
-    baseURL: 'https://api.hamsterkombat.io',
+    baseURL: 'https://api.hamsterkombatgame.io',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
